@@ -22,7 +22,7 @@ import { parsePrometheus, findFamily, sumFamily } from "../prometheus/parse";
 import { buildHistogram } from "../prometheus/histogram";
 
 export interface LiveSourceConfig {
-  /** Base URL of the vLLM server, e.g. http://192.168.0.182:8000 */
+  /** Base URL of the vLLM server, e.g. http://<head-node>:8000 */
   baseUrl: string;
   /** Optional bearer token for /metrics if the deployment guards it. */
   apiKey?: string;

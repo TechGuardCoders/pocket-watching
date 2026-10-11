@@ -8,13 +8,13 @@ cd /d "%~dp0"
 
 REM Settings
 set POCKET_WATCH_MODE=live
-set VLLM_BASE_URL=http://192.168.0.182:8000
+set VLLM_BASE_URL=http://localhost:8000
 REM API key only needed for generating load, not for the dashboard itself.
 REM Set it in your user environment variables if you want load tests.
 
 echo ============================================
 echo  Pocket Watching - live dashboard
-echo  URL for both of you: http://192.168.0.234:3000
+echo  URL for both of you: http://localhost:3000
 echo  (pin this URL to the taskbar in Edge/Chrome)
 echo  Close this window to stop the dashboard.
 echo ============================================

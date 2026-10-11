@@ -11,7 +11,7 @@ Usage:
     python scripts/generate_load.py [--requests 60] [--concurrency 3] [--max-tokens 120]
 
 Env:
-    VLLM_BASE_URL  default http://192.168.0.182:8000
+    VLLM_BASE_URL  default http://localhost:8000
     VLLM_API_KEY   required (bearer token) — set in your shell, never committed
 """
 import argparse
@@ -71,7 +71,7 @@ def main():
     ap.add_argument("--gap", type=float, default=0.2, help="seconds between request submissions")
     args = ap.parse_args()
 
-    base = os.environ.get("VLLM_BASE_URL", "http://192.168.0.182:8000")
+    base = os.environ.get("VLLM_BASE_URL", "http://localhost:8000")
     key = os.environ.get("VLLM_API_KEY")
     if not key:
         sys.exit("set VLLM_API_KEY (bearer token) — it is never committed to the repo")

@@ -2,7 +2,7 @@
 # Build:  docker build -t cost-peep .
 # Run:    docker run -p 3000:3000 \
 #           -e COST_PEEP_MODE=live \
-#           -e VLLM_BASE_URL=http://192.168.0.182:8000 \
+#           -e VLLM_BASE_URL=http://<head-node>:8000 \
 #           cost-peep
 # Mock mode needs no env at all: docker run -p 3000:3000 cost-peep
 
