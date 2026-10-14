@@ -17,7 +17,7 @@
  * GPU utilization comes from DCGM if present (DCGM_FI_DEV_GPU_UTIL), else
  * falls back to vllm:gpu_cache_usage_perc as a serving-pressure proxy.
  */
-import type { MetricsSnapshot } from "../types";
+import type { MetricsSnapshot, HistogramData } from "../types";
 import { parsePrometheus, findFamily, sumFamily } from "../prometheus/parse";
 import { buildHistogram } from "../prometheus/histogram";
 
@@ -45,6 +45,94 @@ function extractHistogramCounts(
 
   if (buckets.length === 0) return null;
   return { bounds: buckets.map((b) => b.le), counts: buckets.map((b) => b.count) };
+}
+
+/**
+ * Parse a comma-separated node list from env (POCKET_WATCH_NODES), e.g.
+ *   POCKET_WATCH_NODES=http://192.168.0.182:8000,http://192.168.0.157:8421
+ * Invalid/empty entries are dropped. Returns [] when unset.
+ */
+export function parseNodeUrls(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim().replace(/\/$/, ""))
+    .filter((s) => s.length > 0);
+}
+
+export interface FleetFetchResult {
+  /** Merged snapshot across every node that answered. */
+  snapshot: MetricsSnapshot;
+  /** Per-node outcome, for honest reporting (a down node ≠ page broken). */
+  nodes: { url: string; ok: boolean; error?: string }[];
+}
+
+/**
+ * Fleet fetch: scrape /metrics from MULTIPLE serving nodes in parallel and
+ * merge into one snapshot. Per-node failure is tolerated — one node down
+ * degrades the merged numbers, it never breaks the page. If EVERY node
+ * fails, the last error is thrown so the route can fall back to the last
+ * good snapshot.
+ *
+ * Merge semantics:
+ *   - counters (prompt/generation tokens, requests) → summed
+ *   - gauges (gpu util, kv cache, running/waiting)   → null-aware mean
+ *   - histograms → bucket-wise sum; requires identical bucket bounds across
+ *     nodes (same vLLM version), otherwise the first node's histogram wins
+ *     (documented approximation, never a crash).
+ */
+export async function fetchFleetSnapshot(cfgs: LiveSourceConfig[]): Promise<FleetFetchResult> {
+  const results = await Promise.all(
+    cfgs.map(async (cfg) => {
+      try {
+        return { url: cfg.baseUrl, ok: true as const, snap: await fetchLiveSnapshot(cfg) };
+      } catch (err) {
+        return { url: cfg.baseUrl, ok: false as const, error: err instanceof Error ? err.message : String(err) };
+      }
+    })
+  );
+
+  const nodes = results.map(({ url, ok, error }) => ({ url, ok, error }));
+  const good = results.filter((r) => r.ok).map((r) => (r as { snap: MetricsSnapshot }).snap);
+  if (good.length === 0) {
+    const lastErr = results.find((r) => !r.ok)?.error ?? "no nodes configured";
+    throw new Error(`all fleet nodes failed; last error: ${lastErr}`);
+  }
+
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const mean = (xs: (number | null)[]): number | null => {
+    const v = xs.filter((x): x is number => x != null);
+    return v.length ? sum(v) / v.length : null;
+  };
+
+  const mergeHist = (key: "ttftHistogram" | "itlHistogram"): HistogramData => {
+    const hists = good.map((s) => s[key]).filter((h) => h.bounds.length > 0);
+    if (hists.length === 0) return { bounds: [], counts: [], p50: null, p95: null, p99: null };
+    const first = hists[0]!;
+    const sameBounds = hists.every(
+      (h) => h.bounds.length === first.bounds.length && h.bounds.every((b, i) => b === first.bounds[i]!)
+    );
+    if (!sameBounds) return first; // mismatched bucket layouts: first node wins, documented
+    const counts = first.bounds.map((_, i) => sum(hists.map((h) => h.counts[i] ?? 0)));
+    return buildHistogram([...first.bounds], counts);
+  };
+
+  const merged: MetricsSnapshot = {
+    ts: Math.max(...good.map((s) => s.ts)),
+    source: "live",
+    ttftHistogram: mergeHist("ttftHistogram"),
+    itlHistogram: mergeHist("itlHistogram"),
+    gpuUtil: mean(good.map((s) => s.gpuUtil)),
+    kvCacheUsage: mean(good.map((s) => s.kvCacheUsage)),
+    promptTokensTotal: sum(good.map((s) => s.promptTokensTotal)),
+    generationTokensTotal: sum(good.map((s) => s.generationTokensTotal)),
+    requestsTotal: sum(good.map((s) => s.requestsTotal)),
+    requestsFailedTotal: sum(good.map((s) => s.requestsFailedTotal)),
+    numRequestsRunning: mean(good.map((s) => s.numRequestsRunning)),
+    numRequestsWaiting: mean(good.map((s) => s.numRequestsWaiting)),
+    families: good.flatMap((s) => s.families),
+  };
+  return { snapshot: merged, nodes };
 }
 
 export async function fetchLiveSnapshot(cfg: LiveSourceConfig): Promise<MetricsSnapshot> {
