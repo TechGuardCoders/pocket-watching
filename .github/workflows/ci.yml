@@ -32,3 +32,12 @@ jobs:
         run: npm run build
         env:
           COST_PEEP_MODE: mock
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker build smoke (multi-arch)
+        run: |
+          docker run --privileged --rm tonistiigi/binfmt --install all
+          docker buildx build --platform linux/amd64,linux/arm64 -t pocket-watching:ci .

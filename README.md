@@ -137,3 +137,15 @@ p95 interpolation matches Prometheus's own `histogram_quantile()` semantics.
 
 <a href="https://techguard.io"><img src="public/tg-logo-dark.svg" alt="Tech Guard" height="28" align="left"></a>
 **POWERED BY** [Tech Guard](https://techguard.io) - engineering and security under one roof.
+
+## Docker
+
+Multi-stage build on `node:20-alpine` (deps → builder → runner), Next.js standalone output, runs as a non-root user.
+
+```bash
+docker build -t pocket-watching .
+docker run -p 3001:3001 pocket-watching          # mock mode, no env needed
+docker run -p 3001:3001 -e COST_PEEP_MODE=live -e VLLM_BASE_URL=http://<head-node>:8000 pocket-watching
+```
+
+Port **3001** per the portfolio port rule. CI runs a multi-arch (`linux/amd64`, `linux/arm64`) buildx smoke on every push/PR.
